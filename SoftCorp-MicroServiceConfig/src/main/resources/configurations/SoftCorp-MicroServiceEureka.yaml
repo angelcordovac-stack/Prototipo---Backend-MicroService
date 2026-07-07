@@ -1,0 +1,13 @@
+server:
+  port: ${PORT:8761}
+
+# Servidor Eureka en modo standalone: no se registra en si mismo.
+# Solo se usa en desarrollo local (no se despliega en Render free tier).
+eureka:
+  client:
+    register-with-eureka: false
+    fetch-registry: false
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+  instance:
+    hostname: localhost

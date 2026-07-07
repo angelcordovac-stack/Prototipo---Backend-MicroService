@@ -43,6 +43,9 @@
     <module>SoftCorp-MicroServiceConfig</module>
     <module>SoftCorp-MicroServiceEureka</module>
     <module>SoftCorp-MicroServiceGateway</module>
+    <module>SoftCorp-MicroServiceIdentidad</module>
+    <module>SoftCorp-MicroServiceIncidencias</module>
+    <module>SoftCorp-MicroServiceEquipos</module>
   </modules>
 
 </project>

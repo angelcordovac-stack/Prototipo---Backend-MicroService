@@ -1,0 +1,183 @@
+# ============================================================
+#  Docker Compose — SoftCorp Backend (microservicios)
+#  Despliegue local completo con un solo comando:
+#    docker compose up --build
+#
+#  Orden de arranque:
+#    1. config      (8888) - configuracion centralizada
+#    2. eureka      (8761) - registro de servicios
+#    3. identidad   (8081) - usuarios / login / JWT
+#    4. equipos     (8083) - inventario de equipos
+#    5. incidencias (8082) - gestion de incidencias
+#    6. gateway     (8080) - puerta unica del frontend
+#
+#  Variables requeridas: crea un archivo .env en la raiz
+#  con los valores de .env.example antes de levantar.
+# ============================================================
+
+services:
+
+  # ── 1. CONFIG SERVER ──────────────────────────────────────
+  config:
+    build:
+      context: .
+      dockerfile: SoftCorp-MicroServiceConfig/Dockerfile
+    image: softcorp/config:local
+    container_name: softcorp-config
+    ports:
+      - "8888:8888"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8888/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - softcorp-net
+
+  # ── 2. EUREKA ─────────────────────────────────────────────
+  eureka:
+    build:
+      context: .
+      dockerfile: SoftCorp-MicroServiceEureka/Dockerfile
+    image: softcorp/eureka:local
+    container_name: softcorp-eureka
+    ports:
+      - "8761:8761"
+    environment:
+      CONFIG_SERVER_URL: http://config:8888
+      EUREKA_ENABLED: "false"
+    depends_on:
+      config:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8761/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - softcorp-net
+
+  # ── 3. IDENTIDAD ──────────────────────────────────────────
+  identidad:
+    build:
+      context: .
+      dockerfile: SoftCorp-MicroServiceIdentidad/Dockerfile
+    image: softcorp/identidad:local
+    container_name: softcorp-identidad
+    ports:
+      - "8081:8081"
+    environment:
+      CONFIG_SERVER_URL: http://config:8888
+      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL}
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD}
+      TOKEN_JWT_SECRET: ${TOKEN_JWT_SECRET}
+      JPA_DDL_AUTO: update
+      DEV_HELPER_ENABLED: "false"
+      EUREKA_ENABLED: "false"
+    depends_on:
+      config:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    networks:
+      - softcorp-net
+
+  # ── 4. EQUIPOS ────────────────────────────────────────────
+  equipos:
+    build:
+      context: .
+      dockerfile: SoftCorp-MicroServiceEquipos/Dockerfile
+    image: softcorp/equipos:local
+    container_name: softcorp-equipos
+    ports:
+      - "8083:8083"
+    environment:
+      CONFIG_SERVER_URL: http://config:8888
+      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL}
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD}
+      TOKEN_JWT_SECRET: ${TOKEN_JWT_SECRET}
+      JPA_DDL_AUTO: update
+      EUREKA_ENABLED: "false"
+    depends_on:
+      config:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8083/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    networks:
+      - softcorp-net
+
+  # ── 5. INCIDENCIAS ────────────────────────────────────────
+  incidencias:
+    build:
+      context: .
+      dockerfile: SoftCorp-MicroServiceIncidencias/Dockerfile
+    image: softcorp/incidencias:local
+    container_name: softcorp-incidencias
+    ports:
+      - "8082:8082"
+    environment:
+      CONFIG_SERVER_URL: http://config:8888
+      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL}
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD}
+      TOKEN_JWT_SECRET: ${TOKEN_JWT_SECRET}
+      JPA_DDL_AUTO: update
+      # Identidad dentro de la red Docker (no localhost)
+      IDENTIDAD_URI: http://identidad:8081
+      EUREKA_ENABLED: "false"
+    depends_on:
+      config:
+        condition: service_healthy
+      identidad:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8082/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    networks:
+      - softcorp-net
+
+  # ── 6. GATEWAY ────────────────────────────────────────────
+  gateway:
+    build:
+      context: .
+      dockerfile: SoftCorp-MicroServiceGateway/Dockerfile
+    image: softcorp/gateway:local
+    container_name: softcorp-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      CONFIG_SERVER_URL: http://config:8888
+      # Servicios dentro de la red Docker (no localhost)
+      IDENTIDAD_URI: http://identidad:8081
+      INCIDENCIAS_URI: http://incidencias:8082
+      EQUIPOS_URI: http://equipos:8083
+      CORS_ALLOWED_ORIGINS: "*"
+      EUREKA_ENABLED: "false"
+    depends_on:
+      identidad:
+        condition: service_healthy
+      incidencias:
+        condition: service_healthy
+      equipos:
+        condition: service_healthy
+    networks:
+      - softcorp-net
+
+networks:
+  softcorp-net:
+    driver: bridge

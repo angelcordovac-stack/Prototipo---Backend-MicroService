@@ -1,0 +1,110 @@
+# ============================================================
+#  RENDER BLUEPRINT - SoftCorp Backend (microservicios)
+# ============================================================
+#  Despliega 4 web services en Render (free tier):
+#    - softcorp-gateway     (puerta unica; el frontend apunta aqui)
+#    - softcorp-identidad   (login/usuarios/tecnicos; emite el JWT)
+#    - softcorp-incidencias (incidencias; llama a identidad)
+#    - softcorp-equipos     (inventario de equipos)
+#
+#  NO se despliegan Eureka ni Config Server en Render: en el free tier los
+#  servicios estan aislados (sin red privada) y se duermen, lo que rompe el
+#  descubrimiento por Eureka. En su lugar, el enrutado va por URL publica
+#  (variables *_URI) y cada servicio se configura por variables de entorno.
+#  Eureka/Config quedan en el repo solo para desarrollo local.
+#
+#  PASOS:
+#   1) Sube el repo a GitHub y crea un "Blueprint" en Render apuntando a el.
+#   2) Rellena el grupo de variables 'softcorp-shared' (BD y JWT).
+#   3) Tras el primer deploy, copia las URLs .onrender.com de identidad,
+#      incidencias y equipos en las variables *_URI del gateway (y de
+#      incidencias -> IDENTIDAD_URI). Redeploy del gateway/incidencias.
+#   4) En Netlify, pon BACKEND_URL = URL publica del gateway.
+#   5) Pon CORS_ALLOWED_ORIGINS (en el gateway) = URL de tu sitio Netlify.
+# ============================================================
+
+envVarGroups:
+  - name: softcorp-shared
+    envVars:
+      # Base de datos PostgreSQL/Supabase COMPARTIDA por los 3 servicios.
+      - key: SPRING_DATASOURCE_URL
+        sync: false
+      - key: SPRING_DATASOURCE_USERNAME
+        sync: false
+      - key: SPRING_DATASOURCE_PASSWORD
+        sync: false
+      # MISMA clave JWT en todos (identidad firma; los demas validan).
+      - key: TOKEN_JWT_SECRET
+        sync: false
+
+services:
+  # ---------------- IDENTIDAD ----------------
+  - type: web
+    name: softcorp-identidad
+    runtime: docker
+    plan: free
+    dockerfilePath: ./SoftCorp-MicroServiceIdentidad/Dockerfile
+    dockerContext: .
+    healthCheckPath: /actuator/health
+    envVars:
+      - fromGroup: softcorp-shared
+      - key: JPA_DDL_AUTO
+        value: update
+      - key: DEV_HELPER_ENABLED
+        value: "false"
+      - key: SPRINGDOC_ENABLED
+        value: "true"
+
+  # ---------------- EQUIPOS ----------------
+  - type: web
+    name: softcorp-equipos
+    runtime: docker
+    plan: free
+    dockerfilePath: ./SoftCorp-MicroServiceEquipos/Dockerfile
+    dockerContext: .
+    healthCheckPath: /actuator/health
+    envVars:
+      - fromGroup: softcorp-shared
+      - key: JPA_DDL_AUTO
+        value: update
+      - key: SPRINGDOC_ENABLED
+        value: "true"
+
+  # ---------------- INCIDENCIAS ----------------
+  - type: web
+    name: softcorp-incidencias
+    runtime: docker
+    plan: free
+    dockerfilePath: ./SoftCorp-MicroServiceIncidencias/Dockerfile
+    dockerContext: .
+    healthCheckPath: /actuator/health
+    envVars:
+      - fromGroup: softcorp-shared
+      - key: JPA_DDL_AUTO
+        value: update
+      - key: SPRINGDOC_ENABLED
+        value: "true"
+      # URL publica de Identidad (para validar el tecnico al asignar).
+      # Rellenar tras el primer deploy de softcorp-identidad.
+      - key: IDENTIDAD_URI
+        sync: false
+
+  # ---------------- GATEWAY (puerta unica) ----------------
+  - type: web
+    name: softcorp-gateway
+    runtime: docker
+    plan: free
+    dockerfilePath: ./SoftCorp-MicroServiceGateway/Dockerfile
+    dockerContext: .
+    envVars:
+      # URLs publicas de los 3 servicios (rellenar tras su primer deploy).
+      - key: IDENTIDAD_URI
+        sync: false
+      - key: INCIDENCIAS_URI
+        sync: false
+      - key: EQUIPOS_URI
+        sync: false
+      # Origen(es) permitido(s) para CORS = tu sitio Netlify. Ej:
+      #   https://mi-sitio.netlify.app   (o "*" para pruebas)
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
