@@ -4,10 +4,13 @@ import dsw.ms.incidencias.model.Incidencia;
 import dsw.ms.incidencias.service.IncidenciaService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpHeaders;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -19,56 +22,66 @@ public class IncidenciaController {
     private IncidenciaService service;
 
     @PostMapping
-    public Incidencia registrar(@Valid @RequestBody Incidencia incidencia) {
-        return service.registrar(incidencia);
+    public ResponseEntity<Incidencia> registrar(@Valid @RequestBody Incidencia incidencia) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(service.registrar(incidencia));
     }
 
     @GetMapping
-    public List<Incidencia> listar() {
-        return service.listar();
+    public ResponseEntity<List<Incidencia>> listar() {
+        return ResponseEntity.ok(service.listar());
     }
 
     @GetMapping("/{id}")
-    public Incidencia buscar(@PathVariable Integer id) {
-        return service.buscar(id);
+    public ResponseEntity<Incidencia> buscar(@PathVariable Integer id) {
+        return ResponseEntity.ok(service.buscar(id));
     }
 
     @GetMapping("/tecnico/{idTecnico}")
-    public List<Incidencia> tareasDeTecnico(@PathVariable Integer idTecnico) {
-        return service.tareasDeTecnico(idTecnico);
+    public ResponseEntity<List<Incidencia>> tareasDeTecnico(@PathVariable Integer idTecnico) {
+        return ResponseEntity.ok(service.tareasDeTecnico(idTecnico));
     }
 
     @GetMapping("/equipo/{codigoEquipo}")
-    public List<Incidencia> historialEquipo(@PathVariable String codigoEquipo) {
-        return service.historialEquipo(codigoEquipo);
+    public ResponseEntity<List<Incidencia>> historialEquipo(@PathVariable String codigoEquipo) {
+        return ResponseEntity.ok(service.historialEquipo(codigoEquipo));
     }
 
-    // ASIGNAR TECNICO - solo JEFE. Se reenvia el header Authorization al MS de Identidad.
-    @PreAuthorize("hasRole('JEFE')")
     @PutMapping("/{id}/asignar")
-    public Incidencia asignarTecnico(@PathVariable Integer id,
-                                     @RequestBody Map<String, Integer> body,
-                                     @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String auth) {
+    @PreAuthorize("hasRole('JEFE')")
+    public ResponseEntity<Incidencia> asignarTecnico(@PathVariable Integer id,
+                                                      @RequestBody Map<String, Integer> body) {
         Integer idTecnico = body.get("idTecnico");
-        return service.asignarTecnico(id, idTecnico, auth);
+        return ResponseEntity.ok(service.asignarTecnico(id, idTecnico));
     }
 
-    // SOLUCIONAR INCIDENCIA - solo TECNICO o JEFE
-    @PreAuthorize("hasAnyRole('TECNICO','JEFE')")
     @PutMapping("/{id}/solucionar")
-    public Incidencia solucionar(@PathVariable Integer id,
-                                 @RequestBody Map<String, String> body) {
-        String tipoSolucion = body != null ? body.get("tipoSolucion") : null;
-        return service.solucionar(id, tipoSolucion);
+    @PreAuthorize("hasAnyRole('JEFE', 'TECNICO')")
+    public ResponseEntity<Incidencia> solucionar(@PathVariable Integer id,
+                                                  @RequestBody Map<String, String> body) {
+        return ResponseEntity.ok(service.solucionar(id, body.get("tipoSolucion")));
     }
 
     @GetMapping("/pendientes")
-    public List<Incidencia> pendientes() {
-        return service.pendientes();
+    public ResponseEntity<List<Incidencia>> pendientes() {
+        return ResponseEntity.ok(service.pendientes());
     }
 
     @GetMapping("/solucionadas")
-    public List<Incidencia> solucionadas() {
-        return service.solucionadas();
+    public ResponseEntity<List<Incidencia>> solucionadas() {
+        return ResponseEntity.ok(service.solucionadas());
+    }
+
+    /**
+     * Filtrado avanzado combinando estado, rango de fechas y tecnico
+     * asignado. Todos los parametros son opcionales.
+     * Consumido directamente y tambien via Feign por ms-reportes.
+     */
+    @GetMapping("/filtrar")
+    public ResponseEntity<List<Incidencia>> filtrar(
+            @RequestParam(required = false) String estado,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate desde,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate hasta,
+            @RequestParam(required = false) Integer idTecnico) {
+        return ResponseEntity.ok(service.filtrar(estado, desde, hasta, idTecnico));
     }
 }

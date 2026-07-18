@@ -1,183 +1,304 @@
-# ============================================================
-#  Docker Compose — SoftCorp Backend (microservicios)
-#  Despliegue local completo con un solo comando:
-#    docker compose up --build
-#
-#  Orden de arranque:
-#    1. config      (8888) - configuracion centralizada
-#    2. eureka      (8761) - registro de servicios
-#    3. identidad   (8081) - usuarios / login / JWT
-#    4. equipos     (8083) - inventario de equipos
-#    5. incidencias (8082) - gestion de incidencias
-#    6. gateway     (8080) - puerta unica del frontend
-#
-#  Variables requeridas: crea un archivo .env en la raiz
-#  con los valores de .env.example antes de levantar.
-# ============================================================
-
 services:
 
-  # ── 1. CONFIG SERVER ──────────────────────────────────────
-  config:
-    build:
-      context: .
-      dockerfile: SoftCorp-MicroServiceConfig/Dockerfile
-    image: softcorp/config:local
-    container_name: softcorp-config
+  # ---------- BASES DE DATOS (un motor distinto por microservicio) ----------
+
+  # ms-usuarios -> PostgreSQL
+  postgres-usuarios:
+    image: postgres:16-alpine
+    container_name: postgres-usuarios
+    ports:
+      - "5433:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=usuariosDb
+    volumes:
+      - pgdata-usuarios:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d usuariosDb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ms-equipos -> MySQL
+  mysql-equipos:
+    image: mysql:8.4
+    container_name: mysql-equipos
+    ports:
+      - "3306:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=root
+      - MYSQL_DATABASE=equiposDb
+    volumes:
+      - mysqldata-equipos:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ms-incidencias -> SQL Server
+  sqlserver-incidencias:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: sqlserver-incidencias
+    ports:
+      - "1433:1433"
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_SA_PASSWORD=SoftCorp2024!
+      - MSSQL_PID=Express
+    volumes:
+      - mssqldata-incidencias:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P \"SoftCorp2024!\" -Q \"SELECT 1\" || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 30s
+
+  # Contenedor "de una sola pasada": SQL Server no crea bases de datos
+  # automaticamente a partir de variables de entorno (a diferencia de
+  # Postgres/MySQL), asi que hay que crearla a mano con sqlcmd la primera vez.
+  sqlserver-incidencias-init:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: sqlserver-incidencias-init
+    depends_on:
+      sqlserver-incidencias:
+        condition: service_healthy
+    entrypoint:
+      - /bin/bash
+      - -c
+      - >
+        /opt/mssql-tools18/bin/sqlcmd -C -S sqlserver-incidencias -U sa -P "SoftCorp2024!"
+        -Q "IF NOT EXISTS (SELECT name FROM sys.databases WHERE name = 'incidenciasDb') CREATE DATABASE incidenciasDb"
+    restart: "no"
+
+  # ms-diccionario-fallas -> PostgreSQL
+  postgres-diccionario:
+    image: postgres:16-alpine
+    container_name: postgres-diccionario
+    ports:
+      - "5434:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=diccionarioFallasDb
+    volumes:
+      - pgdata-diccionario:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d diccionarioFallasDb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ms-reportes -> PostgreSQL (historial de reportes generados; el resto de los
+  # datos que expone se agregan en el momento via Feign, no se almacenan aca)
+  postgres-reportes:
+    image: postgres:16-alpine
+    container_name: postgres-reportes
+    ports:
+      - "5435:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=reportesDb
+    volumes:
+      - pgdata-reportes:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d reportesDb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ---------- INFRAESTRUCTURA ----------
+
+  config-server:
+    build: ./SoftCorp-MicroServiceConfig
+    image: softcorp-config-server
+    container_name: config-server
     ports:
       - "8888:8888"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8888/actuator/health || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8888/SoftCorp-MicroServiceUsuarios/default || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 20s
-    networks:
-      - softcorp-net
+      retries: 10
+      start_period: 15s
 
-  # ── 2. EUREKA ─────────────────────────────────────────────
-  eureka:
-    build:
-      context: .
-      dockerfile: SoftCorp-MicroServiceEureka/Dockerfile
-    image: softcorp/eureka:local
-    container_name: softcorp-eureka
+  eureka-server:
+    build: ./SoftCorp-MicroServiceEureka
+    image: softcorp-eureka-server
+    container_name: eureka-server
     ports:
       - "8761:8761"
     environment:
-      CONFIG_SERVER_URL: http://config:8888
-      EUREKA_ENABLED: "false"
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
     depends_on:
-      config:
+      config-server:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8761/actuator/health || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8761/actuator/health || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 30s
-    networks:
-      - softcorp-net
+      retries: 10
+      start_period: 15s
 
-  # ── 3. IDENTIDAD ──────────────────────────────────────────
-  identidad:
-    build:
-      context: .
-      dockerfile: SoftCorp-MicroServiceIdentidad/Dockerfile
-    image: softcorp/identidad:local
-    container_name: softcorp-identidad
+  # ---------- MICROSERVICIOS DE NEGOCIO ----------
+
+  # ms-usuarios: identidad, perfiles, tecnicos, JWT (PostgreSQL)
+  usuarios-service:
+    build: ./SoftCorp-MicroServiceUsuarios
+    image: softcorp-usuarios-service
+    container_name: usuarios-service
     ports:
       - "8081:8081"
     environment:
-      CONFIG_SERVER_URL: http://config:8888
-      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL}
-      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME}
-      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD}
-      TOKEN_JWT_SECRET: ${TOKEN_JWT_SECRET}
-      JPA_DDL_AUTO: update
-      DEV_HELPER_ENABLED: "false"
-      EUREKA_ENABLED: "false"
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-usuarios:5432/usuariosDb
+      - SPRING_DATASOURCE_USERNAME=postgres
+      - SPRING_DATASOURCE_PASSWORD=postgres
+      - TOKEN_JWT_SECRET=rlwAehxP/vA1hLRRouPqSaT1/+mo1RCWQ++pd/JjeWg=
     depends_on:
-      config:
+      postgres-usuarios:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/actuator/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 40s
-    networks:
-      - softcorp-net
-
-  # ── 4. EQUIPOS ────────────────────────────────────────────
-  equipos:
-    build:
-      context: .
-      dockerfile: SoftCorp-MicroServiceEquipos/Dockerfile
-    image: softcorp/equipos:local
-    container_name: softcorp-equipos
-    ports:
-      - "8083:8083"
-    environment:
-      CONFIG_SERVER_URL: http://config:8888
-      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL}
-      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME}
-      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD}
-      TOKEN_JWT_SECRET: ${TOKEN_JWT_SECRET}
-      JPA_DDL_AUTO: update
-      EUREKA_ENABLED: "false"
-    depends_on:
-      config:
+      config-server:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8083/actuator/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 40s
-    networks:
-      - softcorp-net
+      eureka-server:
+        condition: service_healthy
 
-  # ── 5. INCIDENCIAS ────────────────────────────────────────
-  incidencias:
-    build:
-      context: .
-      dockerfile: SoftCorp-MicroServiceIncidencias/Dockerfile
-    image: softcorp/incidencias:local
-    container_name: softcorp-incidencias
+  # ms-equipos: maestro de equipos (MySQL)
+  equipos-service:
+    build: ./SoftCorp-MicroServiceEquipos
+    image: softcorp-equipos-service
+    container_name: equipos-service
     ports:
       - "8082:8082"
     environment:
-      CONFIG_SERVER_URL: http://config:8888
-      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL}
-      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME}
-      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD}
-      TOKEN_JWT_SECRET: ${TOKEN_JWT_SECRET}
-      JPA_DDL_AUTO: update
-      # Identidad dentro de la red Docker (no localhost)
-      IDENTIDAD_URI: http://identidad:8081
-      EUREKA_ENABLED: "false"
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql-equipos:3306/equiposDb?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=root
+      - TOKEN_JWT_SECRET=rlwAehxP/vA1hLRRouPqSaT1/+mo1RCWQ++pd/JjeWg=
     depends_on:
-      config:
+      mysql-equipos:
         condition: service_healthy
-      identidad:
+      config-server:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8082/actuator/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 40s
-    networks:
-      - softcorp-net
+      eureka-server:
+        condition: service_healthy
 
-  # ── 6. GATEWAY ────────────────────────────────────────────
+  # ms-incidencias: nucleo del proceso (SQL Server)
+  incidencias-service:
+    build: ./SoftCorp-MicroServiceIncidencias
+    image: softcorp-incidencias-service
+    container_name: incidencias-service
+    ports:
+      - "8083:8083"
+    environment:
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka
+      - SPRING_DATASOURCE_URL=jdbc:sqlserver://sqlserver-incidencias:1433;databaseName=incidenciasDb;encrypt=false;trustServerCertificate=true
+      - SPRING_DATASOURCE_USERNAME=sa
+      - SPRING_DATASOURCE_PASSWORD=SoftCorp2024!
+      - TOKEN_JWT_SECRET=rlwAehxP/vA1hLRRouPqSaT1/+mo1RCWQ++pd/JjeWg=
+    depends_on:
+      sqlserver-incidencias:
+        condition: service_healthy
+      sqlserver-incidencias-init:
+        condition: service_completed_successfully
+      config-server:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+      usuarios-service:
+        condition: service_started
+      equipos-service:
+        condition: service_started
+
+  # ms-diccionario-fallas: base de conocimiento (PostgreSQL)
+  diccionario-service:
+    build: ./SoftCorp-MicroServiceDiccionarioFallas
+    image: softcorp-diccionario-service
+    container_name: diccionario-service
+    ports:
+      - "8084:8084"
+    environment:
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-diccionario:5432/diccionarioFallasDb
+      - SPRING_DATASOURCE_USERNAME=postgres
+      - SPRING_DATASOURCE_PASSWORD=postgres
+      - TOKEN_JWT_SECRET=rlwAehxP/vA1hLRRouPqSaT1/+mo1RCWQ++pd/JjeWg=
+    depends_on:
+      postgres-diccionario:
+        condition: service_healthy
+      config-server:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+      usuarios-service:
+        condition: service_started
+
+  # ms-reportes: monitoreo y reportes del area (dashboard, rendimiento de tecnicos)
+  reportes-service:
+    build: ./SoftCorp-MicroServiceReportes
+    image: softcorp-reportes-service
+    container_name: reportes-service
+    ports:
+      - "8085:8085"
+    environment:
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-reportes:5432/reportesDb
+      - SPRING_DATASOURCE_USERNAME=postgres
+      - SPRING_DATASOURCE_PASSWORD=postgres
+      - TOKEN_JWT_SECRET=rlwAehxP/vA1hLRRouPqSaT1/+mo1RCWQ++pd/JjeWg=
+    depends_on:
+      postgres-reportes:
+        condition: service_healthy
+      config-server:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+      usuarios-service:
+        condition: service_started
+      equipos-service:
+        condition: service_started
+      incidencias-service:
+        condition: service_started
+
+  # ---------- GATEWAY ----------
+
   gateway:
-    build:
-      context: .
-      dockerfile: SoftCorp-MicroServiceGateway/Dockerfile
-    image: softcorp/gateway:local
-    container_name: softcorp-gateway
+    build: ./SoftCorp-MicroServiceGateway
+    image: softcorp-gateway
+    container_name: gateway
     ports:
       - "8080:8080"
     environment:
-      CONFIG_SERVER_URL: http://config:8888
-      # Servicios dentro de la red Docker (no localhost)
-      IDENTIDAD_URI: http://identidad:8081
-      INCIDENCIAS_URI: http://incidencias:8082
-      EQUIPOS_URI: http://equipos:8083
-      CORS_ALLOWED_ORIGINS: "*"
-      EUREKA_ENABLED: "false"
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka
     depends_on:
-      identidad:
+      config-server:
         condition: service_healthy
-      incidencias:
+      eureka-server:
         condition: service_healthy
-      equipos:
-        condition: service_healthy
-    networks:
-      - softcorp-net
+      usuarios-service:
+        condition: service_started
+      equipos-service:
+        condition: service_started
+      incidencias-service:
+        condition: service_started
+      diccionario-service:
+        condition: service_started
+      reportes-service:
+        condition: service_started
 
-networks:
-  softcorp-net:
-    driver: bridge
+volumes:
+  pgdata-usuarios:
+  mysqldata-equipos:
+  mssqldata-incidencias:
+  pgdata-diccionario:
+  pgdata-reportes:

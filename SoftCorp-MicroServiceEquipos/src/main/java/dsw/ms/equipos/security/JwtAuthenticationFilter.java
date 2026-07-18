@@ -1,6 +1,5 @@
 package dsw.ms.equipos.security;
 
-import dsw.ms.equipos.util.JwtUtil;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -13,12 +12,12 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.List;
+import java.util.Collections;
 
 /**
- * Filtro JWT sin acceso a BD: la identidad y el rol se derivan de los claims
- * del token (subject + idPerfil). Es el patron stateless correcto para los
- * microservicios que solo validan (no tienen la tabla usuarios).
+ * Valida el JWT emitido por ms-usuarios directamente aqui, sin consultar
+ * ninguna base de datos (este servicio no tiene acceso a la tabla usuarios).
+ * El rol viaja como claim dentro del propio token.
  */
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
@@ -41,27 +40,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         String token = authHeader.substring(7);
 
-        if (jwtUtil.isTokenValid(token)
-                && SecurityContextHolder.getContext().getAuthentication() == null) {
-
+        if (SecurityContextHolder.getContext().getAuthentication() == null && jwtUtil.isTokenValid(token)) {
             String email = jwtUtil.extractEmail(token);
-            Integer idPerfil = jwtUtil.extractIdPerfil(token);
+            String rol = jwtUtil.extractRol(token);
 
-            String rol = switch (idPerfil == null ? 0 : idPerfil) {
-                case 1 -> "ROLE_JEFE";
-                case 2 -> "ROLE_TECNICO";
-                case 3 -> "ROLE_SISTEMAS";
-                default -> "ROLE_USUARIO";
-            };
-
-            UsernamePasswordAuthenticationToken authToken =
-                    new UsernamePasswordAuthenticationToken(
-                            email,
-                            null,
-                            List.of(new SimpleGrantedAuthority(rol))
-                    );
-
-            SecurityContextHolder.getContext().setAuthentication(authToken);
+            if (email != null && rol != null) {
+                SimpleGrantedAuthority authority = new SimpleGrantedAuthority("ROLE_" + rol);
+                UsernamePasswordAuthenticationToken authToken =
+                        new UsernamePasswordAuthenticationToken(email, null, Collections.singletonList(authority));
+                SecurityContextHolder.getContext().setAuthentication(authToken);
+            }
         }
 
         filterChain.doFilter(request, response);

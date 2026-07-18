@@ -1,0 +1,23 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sqlserver-incidencias-init
+  labels:
+    io.kompose.service: sqlserver-incidencias-init
+spec:
+  backoffLimit: 5
+  template:
+    metadata:
+      labels:
+        io.kompose.service: sqlserver-incidencias-init
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: sqlserver-incidencias-init
+          image: mcr.microsoft.com/mssql/server:2022-latest
+          command:
+            - /bin/bash
+            - -c
+            - >
+              /opt/mssql-tools18/bin/sqlcmd -C -S sqlserver-incidencias -U sa -P "SoftCorp2024!"
+              -Q "IF NOT EXISTS (SELECT name FROM sys.databases WHERE name = 'incidenciasDb') CREATE DATABASE incidenciasDb"

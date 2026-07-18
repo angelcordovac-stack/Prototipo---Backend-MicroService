@@ -1,6 +1,5 @@
 server:
-  port: ${PORT:8888}
-
+  port: 8888
 spring:
   application:
     name: SoftCorp-MicroServiceConfig
@@ -10,5 +9,4 @@ spring:
     config:
       server:
         native:
-          # Sirve los .yaml de cada microservicio desde el classpath.
-          search-locations: classpath:/configurations/
+          search-locations: classpath:/configurations

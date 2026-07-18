@@ -22,10 +22,21 @@
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.release>21</maven.compiler.release>
+    <lombok.version>1.18.46</lombok.version>
+    <!-- Los tests placeholder de Spring Initializr necesitan el stack completo
+         (Config Server, Eureka, BD) corriendo via docker-compose para pasar.
+         Se saltan por defecto en "mvn install"; si en algun momento agregas
+         tests reales con su propia configuracion, corre "mvn test -Dmaven.test.skip=false". -->
+    <maven.test.skip>true</maven.test.skip>
   </properties>
 
   <dependencyManagement>
     <dependencies>
+      <dependency>
+        <groupId>org.projectlombok</groupId>
+        <artifactId>lombok</artifactId>
+        <version>${lombok.version}</version>
+      </dependency>
     </dependencies>
   </dependencyManagement>
 
@@ -35,6 +46,19 @@
   <build>
     <pluginManagement><!-- lock down plugins versions to avoid using Maven defaults (may be moved to parent pom) -->
       <plugins>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-compiler-plugin</artifactId>
+          <configuration>
+            <annotationProcessorPaths>
+              <path>
+                <groupId>org.projectlombok</groupId>
+                <artifactId>lombok</artifactId>
+                <version>${lombok.version}</version>
+              </path>
+            </annotationProcessorPaths>
+          </configuration>
+        </plugin>
       </plugins>
     </pluginManagement>
   </build>
@@ -43,9 +67,11 @@
     <module>SoftCorp-MicroServiceConfig</module>
     <module>SoftCorp-MicroServiceEureka</module>
     <module>SoftCorp-MicroServiceGateway</module>
-    <module>SoftCorp-MicroServiceIdentidad</module>
-    <module>SoftCorp-MicroServiceIncidencias</module>
+    <module>SoftCorp-MicroServiceUsuarios</module>
     <module>SoftCorp-MicroServiceEquipos</module>
+    <module>SoftCorp-MicroServiceIncidencias</module>
+    <module>SoftCorp-MicroServiceDiccionarioFallas</module>
+    <module>SoftCorp-MicroServiceReportes</module>
   </modules>
 
 </project>

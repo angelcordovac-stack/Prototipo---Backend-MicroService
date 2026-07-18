@@ -1,15 +1,11 @@
 package dsw.ms.equipos.model;
 
 import jakarta.persistence.*;
+import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-/**
- * Entidad Equipo. Se conserva EXACTAMENTE el mapeo del monolito
- * (tabla "equipos", PK String "codigo_equipo") para que el microservicio
- * opere sobre las mismas filas de la base compartida sin migraciones.
- */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -19,6 +15,7 @@ public class Equipo {
 
     @Id
     @Column(name = "codigo_equipo")
+    @NotBlank(message = "El codigo de equipo es obligatorio")
     private String codigoEquipo;
 
     @Column(name = "marca_modelo")

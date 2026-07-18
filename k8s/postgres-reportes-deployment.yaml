@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    io.kompose.service: postgres-reportes
+  name: postgres-reportes
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: postgres-reportes
+  template:
+    metadata:
+      labels:
+        io.kompose.service: postgres-reportes
+    spec:
+      containers:
+        - env:
+            - name: POSTGRES_USER
+              value: "postgres"
+            - name: POSTGRES_PASSWORD
+              value: "postgres"
+            - name: POSTGRES_DB
+              value: "reportesDb"
+          image: postgres:16-alpine
+          imagePullPolicy: IfNotPresent
+          name: postgres-reportes
+          ports:
+            - containerPort: 5432
+              protocol: TCP
+          volumeMounts:
+            - mountPath: /var/lib/postgresql/data
+              name: pgdata-reportes
+          startupProbe:
+            tcpSocket:
+              port: 5432
+            failureThreshold: 30
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: 5432
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            tcpSocket:
+              port: 5432
+            periodSeconds: 10
+            failureThreshold: 3
+      restartPolicy: Always
+      volumes:
+        - name: pgdata-reportes
+          persistentVolumeClaim:
+            claimName: pgdata-reportes

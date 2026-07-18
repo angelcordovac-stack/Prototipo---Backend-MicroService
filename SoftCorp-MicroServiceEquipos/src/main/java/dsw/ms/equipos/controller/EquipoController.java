@@ -1,27 +1,58 @@
 package dsw.ms.equipos.controller;
 
 import dsw.ms.equipos.model.Equipo;
-import dsw.ms.equipos.repository.EquipoRepository;
+import dsw.ms.equipos.service.EquipoService;
+import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
-/**
- * Se conserva EXACTAMENTE el contrato del monolito: GET /api/equipos.
- * El monolito no tenia capa de servicio para Equipos (acceso directo al
- * repositorio), asi que se replica el mismo comportamiento. La ruta y el
- * verbo se mantienen intactos para que el frontend no requiera cambios.
- */
 @RestController
 @RequestMapping("/api/equipos")
 public class EquipoController {
 
     @Autowired
-    private EquipoRepository repository;
+    private EquipoService service;
 
     @GetMapping
-    public List<Equipo> getAll() {
-        return repository.findAll();
+    public ResponseEntity<List<Equipo>> listar() {
+        return ResponseEntity.ok(service.listar());
+    }
+
+    @GetMapping("/{codigoEquipo}")
+    public ResponseEntity<Equipo> buscar(@PathVariable String codigoEquipo) {
+        return ResponseEntity.ok(service.buscar(codigoEquipo));
+    }
+
+    /**
+     * Consultado via Feign por ms-incidencias.
+     */
+    @GetMapping("/{codigoEquipo}/existe")
+    public ResponseEntity<Boolean> existe(@PathVariable String codigoEquipo) {
+        return ResponseEntity.ok(service.existe(codigoEquipo));
+    }
+
+    @PostMapping
+    @PreAuthorize("hasRole('JEFE')")
+    public ResponseEntity<Equipo> crear(@Valid @RequestBody Equipo equipo) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(service.guardar(equipo));
+    }
+
+    @PutMapping("/{codigoEquipo}")
+    @PreAuthorize("hasRole('JEFE')")
+    public ResponseEntity<Equipo> actualizar(@PathVariable String codigoEquipo,
+                                              @Valid @RequestBody Equipo equipo) {
+        return ResponseEntity.ok(service.actualizar(codigoEquipo, equipo));
+    }
+
+    @DeleteMapping("/{codigoEquipo}")
+    @PreAuthorize("hasRole('JEFE')")
+    public ResponseEntity<String> eliminar(@PathVariable String codigoEquipo) {
+        service.eliminar(codigoEquipo);
+        return ResponseEntity.ok("Equipo eliminado correctamente");
     }
 }

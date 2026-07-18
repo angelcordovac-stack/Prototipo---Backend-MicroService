@@ -21,12 +21,12 @@ public class Incidencia {
     private Integer idIncidencia;
 
     @Column(name = "codigo_equipo")
-    @NotBlank(message = "El código de equipo es obligatorio")
+    @NotBlank(message = "El codigo de equipo es obligatorio")
     private String codigoEquipo;
 
     @Column(name = "descripcion_problema")
-    @NotBlank(message = "La descripción del problema es obligatoria")
-    @Size(min = 10, max = 500, message = "La descripción debe tener entre 10 y 500 caracteres")
+    @NotBlank(message = "La descripcion del problema es obligatoria")
+    @Size(min = 10, max = 500, message = "La descripcion debe tener entre 10 y 500 caracteres")
     private String descripcionProblema;
 
     @Column(name = "fecha_registro")

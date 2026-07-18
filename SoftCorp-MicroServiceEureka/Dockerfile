@@ -1,16 +1,6 @@
-# ============================================================
-#  Contexto de build = RAIZ del repo (multi-modulo). Ejecutar desde la raiz:
-#    docker build -f SoftCorp-MicroServiceEureka/Dockerfile -t softcorp/eureka .
-# ============================================================
-FROM maven:3.9-eclipse-temurin-21 AS build
-WORKDIR /workspace
-COPY . .
-RUN mvn -B -pl SoftCorp-MicroServiceEureka -am clean package -DskipTests
-
-FROM eclipse-temurin:21-jre-alpine AS runtime
-WORKDIR /app
-RUN addgroup -S spring && adduser -S spring -G spring
-USER spring:spring
-COPY --from=build /workspace/SoftCorp-MicroServiceEureka/target/*.jar app.jar
-EXPOSE 8761
-ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75.0", "-jar", "app.jar"]
+FROM eclipse-temurin:21-jre-alpine
+VOLUME /tmp
+ARG JAR_FILE=target/*.jar
+COPY ${JAR_FILE} app.jar
+ENV JAVA_OPTS="-Xmx300m -Xss512k"
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app.jar"]

@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    io.kompose.service: sqlserver-incidencias
+  name: sqlserver-incidencias
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: sqlserver-incidencias
+  template:
+    metadata:
+      labels:
+        io.kompose.service: sqlserver-incidencias
+    spec:
+      containers:
+        - env:
+            - name: ACCEPT_EULA
+              value: "Y"
+            - name: MSSQL_SA_PASSWORD
+              value: "SoftCorp2024!"
+            - name: MSSQL_PID
+              value: "Express"
+          image: mcr.microsoft.com/mssql/server:2022-latest
+          imagePullPolicy: IfNotPresent
+          name: sqlserver-incidencias
+          ports:
+            - containerPort: 1433
+              protocol: TCP
+          volumeMounts:
+            - mountPath: /var/opt/mssql
+              name: mssqldata-incidencias
+          startupProbe:
+            tcpSocket:
+              port: 1433
+            failureThreshold: 30
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: 1433
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            tcpSocket:
+              port: 1433
+            periodSeconds: 10
+            failureThreshold: 3
+      restartPolicy: Always
+      volumes:
+        - name: mssqldata-incidencias
+          persistentVolumeClaim:
+            claimName: mssqldata-incidencias

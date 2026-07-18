@@ -1,14 +1,17 @@
 package dsw.ms.incidencias.service;
 
+import dsw.ms.incidencias.client.EquipoClient;
 import dsw.ms.incidencias.client.TecnicoClient;
+import dsw.ms.incidencias.dto.TecnicoDTO;
 import dsw.ms.incidencias.model.Incidencia;
-import dsw.ms.incidencias.model.TecnicoDTO;
 import dsw.ms.incidencias.repository.IncidenciaRepository;
+import feign.FeignException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -21,7 +24,26 @@ public class IncidenciaService {
     @Autowired
     private TecnicoClient tecnicoClient;
 
+    @Autowired
+    private EquipoClient equipoClient;
+
+    /**
+     * Registra una incidencia validando (via Feign, contra ms-equipos) que
+     * el equipo referenciado exista.
+     */
     public Incidencia registrar(Incidencia incidencia) {
+        boolean existeEquipo;
+        try {
+            existeEquipo = Boolean.TRUE.equals(equipoClient.existe(incidencia.getCodigoEquipo()));
+        } catch (FeignException e) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "No se pudo validar el equipo en ms-equipos: " + e.getMessage());
+        }
+        if (!existeEquipo) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "No existe un equipo con codigo: " + incidencia.getCodigoEquipo());
+        }
+
         incidencia.setFechaRegistro(LocalDateTime.now());
         incidencia.setEstado("Pendiente");
         return repo.save(incidencia);
@@ -46,27 +68,28 @@ public class IncidenciaService {
     }
 
     /**
-     * Asigna un tecnico validando que:
-     *  - La incidencia exista (BD local).
-     *  - El tecnico exista y este disponible (se consulta al MS de Identidad).
-     *  - El tecnico no supere su limite de incidencias Pendientes (BD local).
-     *
-     * @param authHeader header Authorization del llamador, que se reenvia a Identidad.
+     * Asigna un tecnico a una incidencia validando (via Feign, contra
+     * ms-usuarios) que:
+     *  - El tecnico exista y este disponible.
+     *  - El tecnico no haya superado su limite de incidencias activas (Pendiente).
      */
-    public Incidencia asignarTecnico(Integer idIncidencia, Integer idTecnico, String authHeader) {
+    public Incidencia asignarTecnico(Integer idIncidencia, Integer idTecnico) {
         Incidencia incidencia = repo.findById(idIncidencia)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                         "Incidencia no encontrada con id: " + idIncidencia));
 
-        // Datos del tecnico via microservicio de Identidad (Eureka + LoadBalancer)
-        TecnicoDTO tecnico = tecnicoClient.obtener(idTecnico, authHeader);
-
-        if (tecnico == null) {
+        TecnicoDTO tecnico;
+        try {
+            tecnico = tecnicoClient.buscarPorId(idTecnico);
+        } catch (FeignException.NotFound e) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND,
                     "Tecnico no encontrado con id: " + idTecnico);
+        } catch (FeignException e) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "No se pudo validar el tecnico en ms-usuarios: " + e.getMessage());
         }
 
-        if (Boolean.FALSE.equals(tecnico.disponibilidad())) {
+        if (Boolean.FALSE.equals(tecnico.getDisponibilidad())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "El tecnico no esta disponible.");
         }
@@ -75,7 +98,7 @@ public class IncidenciaService {
                 .filter(i -> "Pendiente".equalsIgnoreCase(i.getEstado()))
                 .count();
 
-        Integer max = tecnico.maxIncidencias() != null ? tecnico.maxIncidencias() : 5;
+        Integer max = tecnico.getMaxIncidencias() != null ? tecnico.getMaxIncidencias() : 5;
         if (carga >= max) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "El tecnico ya alcanzo su limite de " + max + " incidencias pendientes.");
@@ -103,5 +126,22 @@ public class IncidenciaService {
 
     public List<Incidencia> solucionadas() {
         return repo.findByEstado("Solucionado");
+    }
+
+    /**
+     * Filtrado avanzado combinando estado, rango de fechas de registro y
+     * tecnico asignado. Todos los parametros son opcionales; los que vengan
+     * en null se ignoran. Usado directamente y tambien consumido via Feign
+     * por ms-reportes para armar el dashboard y los reportes de rendimiento.
+     */
+    public List<Incidencia> filtrar(String estado, LocalDate desde, LocalDate hasta, Integer idTecnico) {
+        return repo.findAll().stream()
+                .filter(i -> estado == null || estado.equalsIgnoreCase(i.getEstado()))
+                .filter(i -> idTecnico == null || idTecnico.equals(i.getIdTecnicoAsignado()))
+                .filter(i -> desde == null || i.getFechaRegistro() == null
+                        || !i.getFechaRegistro().toLocalDate().isBefore(desde))
+                .filter(i -> hasta == null || i.getFechaRegistro() == null
+                        || !i.getFechaRegistro().toLocalDate().isAfter(hasta))
+                .toList();
     }
 }

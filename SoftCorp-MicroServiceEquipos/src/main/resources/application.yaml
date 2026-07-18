@@ -1,36 +1,5 @@
-server:
-  port: ${PORT:8083}
-
 spring:
   application:
     name: SoftCorp-MicroServiceEquipos
   config:
-    import: "optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}"
-  datasource:
-    url: ${SPRING_DATASOURCE_URL}
-    username: ${SPRING_DATASOURCE_USERNAME}
-    password: ${SPRING_DATASOURCE_PASSWORD}
-    driver-class-name: org.postgresql.Driver
-  jpa:
-    hibernate:
-      ddl-auto: ${JPA_DDL_AUTO:update}
-    show-sql: ${JPA_SHOW_SQL:false}
-
-eureka:
-  client:
-    enabled: ${EUREKA_ENABLED:false}
-    register-with-eureka: ${EUREKA_ENABLED:false}
-    fetch-registry: ${EUREKA_ENABLED:false}
-    service-url:
-      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
-
-jwt:
-  secret: ${TOKEN_JWT_SECRET}
-  expiration: 3600000
-
-springdoc:
-  api-docs:
-    path: /v3/api-docs
-  swagger-ui:
-    path: /swagger-ui.html
-    enabled: ${SPRINGDOC_ENABLED:true}
+    import: "optional:configserver:http://localhost:8888"

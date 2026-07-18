@@ -1,16 +1,5 @@
-server:
-  port: ${PORT:8761}
-
 spring:
   application:
     name: SoftCorp-MicroServiceEureka
   config:
-    import: "optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}"
-
-# Servidor Eureka standalone: no se registra en si mismo (solo desarrollo local).
-eureka:
-  client:
-    register-with-eureka: false
-    fetch-registry: false
-  instance:
-    hostname: localhost
+    import: "optional:configserver:http://localhost:8888"

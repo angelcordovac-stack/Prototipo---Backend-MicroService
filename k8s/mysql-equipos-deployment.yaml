@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    io.kompose.service: mysql-equipos
+  name: mysql-equipos
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: mysql-equipos
+  template:
+    metadata:
+      labels:
+        io.kompose.service: mysql-equipos
+    spec:
+      containers:
+        - env:
+            - name: MYSQL_ROOT_PASSWORD
+              value: "root"
+            - name: MYSQL_DATABASE
+              value: "equiposDb"
+          image: mysql:8.4
+          imagePullPolicy: IfNotPresent
+          name: mysql-equipos
+          ports:
+            - containerPort: 3306
+              protocol: TCP
+          volumeMounts:
+            - mountPath: /var/lib/mysql
+              name: mysqldata-equipos
+          startupProbe:
+            tcpSocket:
+              port: 3306
+            failureThreshold: 30
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: 3306
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            tcpSocket:
+              port: 3306
+            periodSeconds: 10
+            failureThreshold: 3
+      restartPolicy: Always
+      volumes:
+        - name: mysqldata-equipos
+          persistentVolumeClaim:
+            claimName: mysqldata-equipos
